@@ -7,8 +7,8 @@
                               -------------------
         begin                : 2014-09-04
         git sha              : $Format:%H$
-        copyright            : (C) 2014 by Håvard Tveite
-        email                : havard.tveite@nmbu.no
+        copyright            : (C) 2014 by Håvard Tveite; Xiaowei Zeng
+        email                : havard.tveite@nmbu.no; xiaowei.zeng@cug.edu.cn
  ***************************************************************************/
 
 /***************************************************************************
@@ -26,6 +26,7 @@ from qgis.core import QgsProject, QgsMapLayer
 # from qgis.core import QgsMapLayerRegistry, QgsMapLayer
 # from qgis.core import QGis
 from qgis.core import QgsWkbTypes
+from qgis.core import QgsMessageLog, Qgis
 
 # import processing
 
@@ -131,47 +132,63 @@ class NNJoin(object):
 
     def run(self):
         """Run method that initialises and starts the user interface"""
-        # Create the dialog (after translation) and keep reference
-        self.dlg = NNJoinDialog(self.iface)
-        # Intitalise the components
-        self.dlg.progressBar.setValue(0.0)
-        self.dlg.outputDataset.setText('Result')
-        # Populate the input and join layer combo boxes
-#        layers = QgsMapLayerRegistry.instance().mapLayers()
-        layers = QgsProject.instance().mapLayers()
-        layerslist = []
-        for id in layers.keys():
-            if layers[id].type() == QgsMapLayer.VectorLayer:
-                if not layers[id].isValid():
-                    QMessageBox.information(None,
-                        self.tr('Information'),
-                        'Layer ' + layers[id].name() + ' is not valid')
-                if layers[id].wkbType() != QgsWkbTypes.NoGeometry:
-                    layerslist.append((layers[id].name(), id))
-        if len(layerslist) == 0 or len(layers) == 0:
-            QMessageBox.information(None,
-               self.tr('Information'),
-               self.tr('Vector layers not found'))
-            return
-        # Add the layers to the layers combobox
-        self.dlg.inputVectorLayer.clear()
-        for layerdescription in layerslist:
-            self.dlg.inputVectorLayer.addItem(layerdescription[0],
-                                        layerdescription[1])
-        # for alayer in self.iface.legendInterface().layers():
-        # for alayer in layers:
-        #     if alayer.type() == QgsMapLayer.VectorLayer:
-        #         self.dlg.inputVectorLayer.addItem(alayer.name(), alayer.id())
-        self.dlg.joinVectorLayer.clear()
-        # for alayer in self.iface.legendInterface().layers():
-        # for alayer in layers:
-        #     if alayer.type() == QgsMapLayer.VectorLayer:
-        #         self.dlg.joinVectorLayer.addItem(alayer.name(), alayer.id())
-        # Add the layers to the layers combobox
-        for layerdescription in layerslist:
-            self.dlg.joinVectorLayer.addItem(layerdescription[0],
-                                        layerdescription[1])
-        # show the dialog (needed for the messagebar cancel button)
-        self.dlg.show()
-        # Run the dialog event loop
-        self.dlg.exec_()
+        # Ensure QMessageBox is available in this scope
+        from qgis.PyQt.QtWidgets import QMessageBox
+        
+        try:
+            # Log some information before creating the dialog
+            QgsMessageLog.logMessage("Starting NNJoin plugin", "NNJoin", Qgis.Info)
+            
+            # Create dialog
+            self.dlg = NNJoinDialog(self.iface)
+            
+            # Initialize components
+            self.dlg.progressBar.setValue(0)
+            self.dlg.outputDataset.setText('Result')
+            
+            # Prepare layer list
+            layers = QgsProject.instance().mapLayers()
+            layerslist = []
+            
+            # Collect valid vector layers
+            for id in layers.keys():
+                if layers[id].type() == QgsMapLayer.VectorLayer:
+                    if not layers[id].isValid():
+                        QgsMessageLog.logMessage('Layer ' + layers[id].name() + ' is not valid', 
+                                              "NNJoin", Qgis.Warning)
+                    if layers[id].wkbType() != QgsWkbTypes.NoGeometry:
+                        layerslist.append((layers[id].name(), id))
+            
+            # Check if there are available layers
+            if len(layerslist) == 0 or len(layers) == 0:
+                QMessageBox.information(None,
+                   self.tr('Information'),
+                   self.tr('Vector layers not found'))
+                return
+            
+            # Populate layer dropdown lists
+            self.dlg.inputVectorLayer.clear()
+            for layerdescription in layerslist:
+                self.dlg.inputVectorLayer.addItem(layerdescription[0],
+                                            layerdescription[1])
+            
+            self.dlg.joinVectorLayer.clear()
+            for layerdescription in layerslist:
+                self.dlg.joinVectorLayer.addItem(layerdescription[0],
+                                            layerdescription[1])
+            
+            # Show dialog in modal mode instead of non-modal + exec_()
+            self.dlg.setModal(True)
+            self.dlg.show()
+            
+        except Exception as e:
+            # Catch and log any exceptions to avoid QGIS crash
+            import traceback
+            error_msg = "NNJoin plugin error: " + traceback.format_exc()
+            QgsMessageLog.logMessage(error_msg, "NNJoin", Qgis.Critical)
+            # Try to show error message to user
+            try:
+                QMessageBox.critical(None, "NNJoin Error", 
+                                   "An error occurred in the NNJoin plugin. See the QGIS log for details.")
+            except:
+                pass

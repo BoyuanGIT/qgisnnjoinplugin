@@ -6,8 +6,8 @@
 
                              -------------------
         begin                : 2014-09-04
-        copyright            : (C) 2014 by Håvard Tveite
-        email                : havard.tveite@nmbu.no
+        copyright            : (C) 2014 by Håvard Tveite; Xiaowei Zeng
+        email                : havard.tveite@nmbu.no; xiaowei.zeng@cug.edu.cn
         git sha              : $Format:%H$
  ***************************************************************************/
 

@@ -7,8 +7,8 @@
                              -------------------
         begin                : 2014-09-04
         git sha              : $Format:%H$
-        copyright            : (C) 2014 by Håvard Tveite
-        email                : havard.tveite@nmbu.no
+        copyright            : (C) 2014 by Håvard Tveite; Xiaowei Zeng
+        email                : havard.tveite@nmbu.no; xiaowei.zeng@cug.edu.cn
  ***************************************************************************/
 
 /***************************************************************************
@@ -73,7 +73,7 @@ class Worker(QtCore.QObject):
     */
     '''
     # Define the signals used to communicate back to the application
-    progress = QtCore.pyqtSignal(float)  # For reporting progress
+    progress = QtCore.pyqtSignal(int)  # For reporting progress
     status = QtCore.pyqtSignal(str)      # For reporting status
     error = QtCore.pyqtSignal(str)       # For reporting errors
     # Signal for sending over the result:
@@ -130,6 +130,14 @@ class Worker(QtCore.QObject):
         self.selectedjoonly = selectedjoinonly
         self.excludecontaining = excludecontaining
 
+        # Save layer IDs to avoid direct layer references in threads
+        self.input_layer_id = None
+        self.join_layer_id = None
+        if self.inpvl is not None:
+            self.input_layer_id = self.inpvl.id()
+        if self.joinvl is not None:
+            self.join_layer_id = self.joinvl.id()
+
         # Check if the layers are the same (self join)
         self.selfjoin = False
         if self.inpvl is self.joinvl:
@@ -152,33 +160,80 @@ class Worker(QtCore.QObject):
         # The number of elements that is needed to increment the
         # progressbar (set when needed)
         self.increment = 0
+        
+        # Set intermediate variables to reduce frequent progress signal sending
+        self.last_emitted_progress = 0
 
     def run(self):
         try:
-            # Check if the layers look OK
+            # First check if abort has been requested
+            if self.abort:
+                self.status.emit('Aborted before start!')
+                self.finished.emit(False, None)
+                return
+                
+            # Ensure we can get the layers
             if self.inpvl is None or self.joinvl is None:
                 self.status.emit('Layer is missing!')
                 self.finished.emit(False, None)
                 return
-            # Check if there are features in the layers
-            incount = 0
-            if self.selectedinonly:
-                incount = self.inpvl.selectedFeatureCount()
-            else:
-                incount = self.inpvl.featureCount()
-            if incount == 0:
-                self.status.emit('Input layer has no features!')
+                
+            # Perform basic validation
+            try:
+                # Check layer validity
+                if not self.inpvl.isValid():
+                    self.status.emit('Input layer is not valid!')
+                    self.finished.emit(False, None)
+                    return
+                    
+                if not self.joinvl.isValid():
+                    self.status.emit('Join layer is not valid!')
+                    self.finished.emit(False, None)
+                    return
+                
+                # Check if layers have features
+                incount = 0
+                if self.selectedinonly:
+                    incount = self.inpvl.selectedFeatureCount()
+                else:
+                    incount = self.inpvl.featureCount()
+                    
+                if incount == 0:
+                    self.status.emit('Input layer has no features!')
+                    self.finished.emit(False, None)
+                    return
+                    
+                joincount = 0
+                if self.selectedjoonly:
+                    joincount = self.joinvl.selectedFeatureCount()
+                else:
+                    joincount = self.joinvl.featureCount()
+                    
+                if joincount == 0:
+                    self.status.emit('Join layer has no features!')
+                    self.finished.emit(False, None)
+                    return
+                
+                # Check geometry types
+                self.inpWkbType = self.inpvl.wkbType()
+                self.joinWkbType = self.joinvl.wkbType()
+                
+                # Check if there are geometries
+                if (self.inpvl.geometryType() == QgsWkbTypes.NullGeometry):
+                    self.status.emit('No geometries in the input layer!')
+                    self.finished.emit(False, None)
+                    return
+                
+                if (self.joinvl.geometryType() == QgsWkbTypes.NullGeometry):
+                    self.status.emit('No geometries in the join layer!')
+                    self.finished.emit(False, None)
+                    return
+            except Exception as e:
+                import traceback
+                self.error.emit("Error validating layers: " + traceback.format_exc())
                 self.finished.emit(False, None)
                 return
-            joincount = 0
-            if self.selectedjoonly:
-                joincount = self.joinvl.selectedFeatureCount()
-            else:
-                joincount = self.joinvl.featureCount()
-            if joincount == 0:
-                self.status.emit('Join layer has no features!')
-                self.finished.emit(False, None)
-                return
+
             # Get the wkbtype of the layers
             self.inpWkbType = self.inpvl.wkbType()
             self.joinWkbType = self.joinvl.wkbType()
@@ -194,7 +249,12 @@ class Worker(QtCore.QObject):
                 self.finished.emit(False, None)
                 return
             # Set the geometry type and prepare the output layer
-            inpWkbTypetext = QgsWkbTypes.displayString(int(self.inpWkbType))
+            try:
+                # In QGIS 3.40.2, displayString method does not accept int type parameter
+                inpWkbTypetext = QgsWkbTypes.displayString(self.inpWkbType)
+            except TypeError:
+                # If error occurs, try using direct string description
+                inpWkbTypetext = self.getWkbTypeString(self.inpWkbType)
             # self.inputmulti = QgsWkbTypes.isMultiType(self.inpWkbType)
             # self.status.emit('wkbtype: ' + inpWkbTypetext)
             # geometryType = self.inpvl.geometryType()
@@ -359,19 +419,25 @@ class Worker(QtCore.QObject):
                 self.calculate_progress()
             self.mem_joinl.dataProvider().addFeatures(self.features)
             self.status.emit('Join finished')
-        except:
+        except Exception as e:
             import traceback
             self.error.emit(traceback.format_exc())
             self.finished.emit(False, None)
-            if self.mem_joinl is not None:
+            # Add check to avoid 'mem_joinl' attribute not found error
+            if hasattr(self, 'mem_joinl') and self.mem_joinl is not None:
                 self.mem_joinl.rollBack()
         else:
-            self.mem_joinl.commitChanges()
-            if self.abort:
-                self.finished.emit(False, None)
+            # Ensure mem_joinl exists
+            if hasattr(self, 'mem_joinl') and self.mem_joinl is not None:
+                self.mem_joinl.commitChanges()
+                if self.abort:
+                    self.finished.emit(False, None)
+                else:
+                    self.status.emit('Delivering the memory layer...')
+                    self.finished.emit(True, self.mem_joinl)
             else:
-                self.status.emit('Delivering the memory layer...')
-                self.finished.emit(True, self.mem_joinl)
+                self.error.emit("Memory layer not created")
+                self.finished.emit(False, None)
 
     def calculate_progress(self):
         '''Update progress and emit a signal with the percentage'''
@@ -382,12 +448,17 @@ class Worker(QtCore.QObject):
             # Calculate percentage as integer
             perc_new = (self.processed * 100) / self.feature_count
             if perc_new > self.percentage:
-                self.percentage = perc_new
-                self.progress.emit(self.percentage)
+                # Reduce signal sending frequency, only send when progress changes by more than 1%
+                if int(perc_new) > self.last_emitted_progress:
+                    self.percentage = perc_new
+                    progress_value = int(self.percentage)
+                    self.progress.emit(progress_value)
+                    self.last_emitted_progress = progress_value
 
     def kill(self):
         '''Kill the thread by setting the abort flag'''
         self.abort = True
+        self.status.emit('Aborting...')
 
     def do_indexjoin(self, feat):
         '''Find the nearest neigbour of a feature.  Using an index,
@@ -768,6 +839,42 @@ class Worker(QtCore.QObject):
             self.features.append(outFeat)
             # self.mem_joinl.dataProvider().addFeatures([outFeat])
     # end of do_indexjoin
+
+    def getWkbTypeString(self, wkbType):
+        """Manually get string representation of WKB type for compatibility with different QGIS versions"""
+        try:
+            if wkbType == QgsWkbTypes.Point:
+                return "Point"
+            elif wkbType == QgsWkbTypes.LineString:
+                return "LineString"  
+            elif wkbType == QgsWkbTypes.Polygon:
+                return "Polygon"
+            elif wkbType == QgsWkbTypes.MultiPoint:
+                return "MultiPoint"
+            elif wkbType == QgsWkbTypes.MultiLineString:
+                return "MultiLineString"
+            elif wkbType == QgsWkbTypes.MultiPolygon:
+                return "MultiPolygon"
+            elif wkbType == QgsWkbTypes.NoGeometry:
+                return "NoGeometry"
+            elif wkbType == QgsWkbTypes.Point25D:
+                return "Point25D"
+            elif wkbType == QgsWkbTypes.LineString25D:
+                return "LineString25D"
+            elif wkbType == QgsWkbTypes.Polygon25D:
+                return "Polygon25D"
+            elif wkbType == QgsWkbTypes.MultiPoint25D:
+                return "MultiPoint25D"
+            elif wkbType == QgsWkbTypes.MultiLineString25D:
+                return "MultiLineString25D"
+            elif wkbType == QgsWkbTypes.MultiPolygon25D:
+                return "MultiPolygon25D"
+            else:
+                # Return unknown type by default
+                return "Unknown_" + str(wkbType)
+        except:
+            # Return default value in case of complete failure
+            return "GeometryType_" + str(wkbType)
 
     def tr(self, message):
         """Get the translation for a string using Qt translation API.

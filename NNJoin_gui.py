@@ -7,8 +7,8 @@
                       -------------------
         begin                : 2014-09-04
         git sha              : $Format:%H$
-        copyright            : (C) 2014 by Håvard Tveite
-        email                : havard.tveite@nmbu.no
+        copyright            : (C) 2014 by Håvard Tveite; Xiaowei Zeng
+        email                : havard.tveite@nmbu.no; xiaowei.zeng@cug.edu.cn
  ***************************************************************************/
 
 /***************************************************************************
@@ -47,194 +47,280 @@ FORM_CLASS, _ = uic.loadUiType(join(
 class NNJoinDialog(QDialog, FORM_CLASS):
     def __init__(self, iface, parent=None):
         """Constructor."""
+        # Basic settings
         self.iface = iface
         self.plugin_dir = dirname(__file__)
-        # Some translated text (to enable reuse)
+        
+        # Localized text
         self.NNJOIN = self.tr('NNJoin')
         self.CANCEL = self.tr('Cancel')
         self.CLOSE = self.tr('Close')
         self.HELP = self.tr('Help')
         self.OK = self.tr('OK')
-        super(NNJoinDialog, self).__init__(parent)
-        # Set up the user interface from Designer.
-        # After setupUI you can access any designer object by doing
-        # self.<objectname>, and you can use autoconnect slots - see
-        # http://qt-project.org/doc/qt-4.8/designer-using-a-ui-file.html#\
-        # widgets-and-dialogs-with-auto-connect
+        
+        # Call parent constructor before creating UI
+        QDialog.__init__(self, parent)
+        
+        # Set simple window flags to avoid using complex Qt features
+        self.setWindowFlags(Qt.Window)
+        
+        # Now set up UI
         self.setupUi(self)
-        # Modify ui components
+        
+        # Simplify UI component configuration, avoid using complex styles
         okButton = self.button_box.button(QDialogButtonBox.Ok)
         okButton.setText(self.OK)
         self.cancelButton = self.button_box.button(QDialogButtonBox.Cancel)
         self.cancelButton.setText(self.CANCEL)
         closeButton = self.button_box.button(QDialogButtonBox.Close)
         closeButton.setText(self.CLOSE)
-        self.approximate_input_geom_cb.setCheckState(Qt.Unchecked)
+        
+        # Use simple checked/unchecked settings
+        self.approximate_input_geom_cb.setChecked(False)  
         self.approximate_input_geom_cb.setVisible(False)
-        stytxt = "QCheckBox:checked {color: red; background-color: white}"
-        self.approximate_input_geom_cb.setStyleSheet(stytxt)
-        self.use_indexapprox_cb.setCheckState(Qt.Unchecked)
+        
+        # Avoid using custom stylesheets
+        self.use_indexapprox_cb.setChecked(False)
         self.use_indexapprox_cb.setVisible(False)
-        self.use_indexapprox_cb.setStyleSheet(stytxt)
-        self.use_index_nonpoint_cb.setCheckState(Qt.Unchecked)
+        
+        self.use_index_nonpoint_cb.setChecked(False)
         self.use_index_nonpoint_cb.setVisible(False)
+        
         self.button_box.button(QDialogButtonBox.Ok).setEnabled(False)
         self.button_box.button(QDialogButtonBox.Cancel).setEnabled(False)
+        
         # Help button
         helpButton = self.helpButton
         helpButton.setText(self.HELP)
 
-        # Connect signals
-        okButton.clicked.connect(self.startWorker)
-        # self.cancelButton.clicked.connect(self.killWorker)
-        closeButton.clicked.connect(self.reject)
+        # Simplify signal connections
+        okButton.clicked.connect(self.simplifiedStartWorker)
+        closeButton.clicked.connect(self.reject)  # Use standard Qt dialog close
         helpButton.clicked.connect(self.help)
-        self.approximate_input_geom_cb.stateChanged['int'].connect(
-            self.useindexchanged)
-        self.use_indexapprox_cb.stateChanged['int'].connect(
-            self.useindexchanged)
-        self.use_index_nonpoint_cb.stateChanged['int'].connect(
-            self.useindexchanged)
-        inpIndexCh = self.inputVectorLayer.currentIndexChanged['QString']
-        inpIndexCh.connect(self.layerchanged)
-        joinIndexCh = self.joinVectorLayer.currentIndexChanged['QString']
-        # joinIndexCh.connect(self.layerchanged)
-        joinIndexCh.connect(self.joinlayerchanged)
-        # self.distancefieldname.editingFinished.connect(self.fieldchanged)
+        
+        # Simplify other connections
+        self.approximate_input_geom_cb.stateChanged.connect(self.useindexchanged)
+        self.use_indexapprox_cb.stateChanged.connect(self.useindexchanged)
+        self.use_index_nonpoint_cb.stateChanged.connect(self.useindexchanged)
+        
+        self.inputVectorLayer.currentIndexChanged.connect(self.layerchanged)
+        self.joinVectorLayer.currentIndexChanged.connect(self.joinlayerchanged)
         self.distancefieldname.textChanged.connect(self.distfieldchanged)
         self.joinPrefix.editingFinished.connect(self.fieldchanged)
+        
+        # Simplify layer list change handling
         theRegistry = QgsProject.instance()
         theRegistry.layersAdded.connect(self.layerlistchanged)
         theRegistry.layersRemoved.connect(self.layerlistchanged)
-        # Disconnect the cancel button to avoid exiting.
-        self.button_box.rejected.disconnect(self.reject)
-
-        # Set instance variables
+        
+        # Instance variables
         self.mem_layer = None
         self.worker = None
+        self.mythread = None
+        self.progressDialog = None
         self.inputlayerid = None
         self.joinlayerid = None
         self.layerlistchanging = False
-
-    def startWorker(self):
-        """Initialises and starts the worker thread."""
+    
+    def simplifiedStartWorker(self):
+        """Simplified worker startup method, avoid using message bar and complex thread management"""
         try:
+            # First clean up any existing resources
+            self.cleanupResources()
+            
+            # Basic checks
             layerindex = self.inputVectorLayer.currentIndex()
             layerId = self.inputVectorLayer.itemData(layerindex)
             inputlayer = QgsProject.instance().mapLayer(layerId)
             if inputlayer is None:
-                self.showError(self.tr('No input layer defined'))
+                self.simplifiedShowError(self.tr('No input layer defined'))
                 return
+                
             joinindex = self.joinVectorLayer.currentIndex()
             joinlayerId = self.joinVectorLayer.itemData(joinindex)
             joinlayer = QgsProject.instance().mapLayer(joinlayerId)
             if joinlayer is None:
-                self.showError(self.tr('No join layer defined'))
+                self.simplifiedShowError(self.tr('No join layer defined'))
                 return
+                
             if joinlayer is not None and joinlayer.crs().isGeographic():
-                self.showWarning('Geographic CRS used for the join layer -'
+                self.simplifiedShowWarning('Geographic CRS used for the join layer -'
                                  ' distances will be in decimal degrees!')
+                
+            # Collect parameters
             outputlayername = self.outputDataset.text()
             approximateinputgeom = self.approximate_input_geom_cb.isChecked()
             joinprefix = self.joinPrefix.text()
-            # useindex = True
             useindex = self.use_index_nonpoint_cb.isChecked()
             useindexapproximation = self.use_indexapprox_cb.isChecked()
             distancefieldname = self.distancefieldname.text()
             selectedinputonly = self.inputSelected.isChecked()
             selectedjoinonly = self.joinSelected.isChecked()
             excludecontaining = self.exclude_containing_poly_cb.isChecked()
-            # create a new worker instance
+            
+            # Use QProgressDialog instead of message bar
+            from qgis.PyQt.QtWidgets import QProgressDialog
+            self.progressDialog = QProgressDialog(self.tr("Processing join..."), self.tr("Cancel"), 0, 100, self)
+            self.progressDialog.setWindowTitle(self.tr("NNJoin"))
+            self.progressDialog.setWindowModality(Qt.WindowModal)
+            self.progressDialog.setMinimumDuration(0)  # Show immediately
+            
+            # Create worker object
             self.worker = Worker(inputlayer, joinlayer, outputlayername,
                             joinprefix, distancefieldname,
                             approximateinputgeom, useindexapproximation,
                             useindex, selectedinputonly, selectedjoinonly,
                             excludecontaining)
-            # configure the QgsMessageBar
-            msgBar = self.iface.messageBar().createMessage(
-                                                self.tr('Joining'), '')
-            self.aprogressBar = QProgressBar()
-            self.aprogressBar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            acancelButton = QPushButton()
-            acancelButton.setText(self.CANCEL)
-            # acancelButton.clicked.connect(self.killWorker)
-            msgBar.layout().addWidget(self.aprogressBar)
-            msgBar.layout().addWidget(acancelButton)
-            # Has to be popped after the thread has finished (in
-            # workerFinished).
-            self.iface.messageBar().pushWidget(msgBar,
-                                               Qgis.Info)
-            #                      self.iface.messageBar().INFO)
-            self.messageBar = msgBar
-            # start the worker in a new thread
-            self.mythread = QThread(self)  # QT requires the "self"
-            self.worker.status.connect(self.workerInfo)
-            self.worker.progress.connect(self.progressBar.setValue)
-            self.worker.progress.connect(self.aprogressBar.setValue)
-            self.worker.finished.connect(self.workerFinished)
-            self.worker.error.connect(self.workerError)
-            # Must come before movetothread:
-            self.cancelButton.clicked.connect(self.worker.kill)
-            acancelButton.clicked.connect(self.worker.kill)
-            self.worker.finished.connect(self.worker.deleteLater)
-            self.worker.finished.connect(self.mythread.quit)
-            # self.worker.error.connect(self.worker.deleteLater)
-            # self.worker.error.connect(self.mythread.quit)
-            # Must come before thread.started.connect!:
+                            
+            # Create thread
+            self.mythread = QThread()
+            
+            # Connect signals
+            self.worker.status.connect(lambda msg: QgsMessageLog.logMessage(msg, self.NNJOIN, Qgis.Info))
+            self.worker.progress.connect(self.progressDialog.setValue)
+            self.worker.finished.connect(lambda ok, ret: self.simplifiedWorkerFinished(ok, ret))
+            self.worker.error.connect(lambda msg: self.simplifiedShowError(msg))
+            
+            # Connect cancel button
+            self.progressDialog.canceled.connect(self.worker.kill)
+            
+            # Install to thread
             self.worker.moveToThread(self.mythread)
             self.mythread.started.connect(self.worker.run)
-            self.mythread.finished.connect(self.mythread.deleteLater)
-            self.mythread.start()
-            # self.thread = thread
-            # self.worker = worker
+            
+            # Update UI state
             self.button_box.button(QDialogButtonBox.Ok).setEnabled(False)
             self.button_box.button(QDialogButtonBox.Close).setEnabled(False)
             self.button_box.button(QDialogButtonBox.Cancel).setEnabled(True)
+            
+            # Show progress dialog
+            self.progressDialog.show()
+            
+            # Start thread
+            self.mythread.start()
+            
             if layerId == joinlayerId:
-                self.showInfo("The join layer is the same as the"
-                              " input layer - doing a self join!")
-        except:
+                self.simplifiedShowInfo("The join layer is the same as the"
+                                " input layer - doing a self join!")
+                
+        except Exception as e:
             import traceback
-            self.showError("Error starting worker: " + traceback.format_exc())
-        else:
-            pass
-        # End of startworker
-
-    def workerFinished(self, ok, ret):
-        """Handles the output from the worker and cleans up after the
-           worker has finished."""
-        # remove widget from message bar (pop)
-        self.iface.messageBar().popWidget(self.messageBar)
-        if ok and ret is not None:
-            # report the result
-            mem_layer = ret
-            QgsMessageLog.logMessage(self.tr('NNJoin finished'),
-                                     self.NNJOIN, Qgis.Info)
-            mem_layer.dataProvider().updateExtents()
-            mem_layer.commitChanges()
-            self.layerlistchanging = True
-            QgsProject.instance().addMapLayer(mem_layer)
-            self.layerlistchanging = False
-        else:
-            # notify the user that something went wrong
-            if not ok:
-                self.showError(self.tr('Aborted') + '!')
+            self.simplifiedShowError("Error: " + traceback.format_exc())
+            self.cleanupResources()
+    
+    def simplifiedWorkerFinished(self, ok, ret):
+        """Simplified worker completion handling"""
+        try:
+            # Close progress dialog
+            if self.progressDialog is not None:
+                self.progressDialog.close()
+                self.progressDialog = None
+            
+            # Process result
+            if ok and ret is not None:
+                # Add result layer
+                mem_layer = ret
+                QgsMessageLog.logMessage(self.tr('NNJoin finished'), self.NNJOIN, Qgis.Info)
+                
+                try:
+                    mem_layer.dataProvider().updateExtents()
+                    mem_layer.commitChanges()
+                    self.layerlistchanging = True
+                    QgsProject.instance().addMapLayer(mem_layer)
+                    self.layerlistchanging = False
+                except Exception as e:
+                    import traceback
+                    self.simplifiedShowError("Error adding result layer: " + traceback.format_exc())
             else:
-                self.showError(self.tr('No layer created') + '!')
-        self.progressBar.setValue(0.0)
-        self.button_box.button(QDialogButtonBox.Ok).setEnabled(True)
-        self.button_box.button(QDialogButtonBox.Close).setEnabled(True)
-        self.button_box.button(QDialogButtonBox.Cancel).setEnabled(False)
-        # End of workerFinished
-
-    def workerError(self, exception_string):
-        """Report an error from the worker."""
-        self.showError(exception_string)
-
-    def workerInfo(self, message_string):
-        """Report an info message from the worker."""
-        QgsMessageLog.logMessage(self.tr('Worker') + ': ' + message_string,
-                                 self.NNJOIN, Qgis.Info)
+                if not ok:
+                    self.simplifiedShowError(self.tr('Aborted') + '!')
+                else:
+                    self.simplifiedShowError(self.tr('No layer created') + '!')
+            
+            # Update UI state
+            self.progressBar.setValue(0)
+            self.button_box.button(QDialogButtonBox.Ok).setEnabled(True)
+            self.button_box.button(QDialogButtonBox.Close).setEnabled(True)
+            self.button_box.button(QDialogButtonBox.Cancel).setEnabled(False)
+                    
+        except Exception as e:
+            import traceback
+            QgsMessageLog.logMessage("Error in simplifiedWorkerFinished: " + traceback.format_exc(),
+                                    self.NNJOIN, Qgis.Critical)
+        finally:
+            # Clean up thread and worker
+            self.cleanupResources()
+    
+    def cleanupResources(self):
+        """Clean up threads and other resources"""
+        try:
+            # Close progress dialog
+            if hasattr(self, 'progressDialog') and self.progressDialog is not None:
+                try:
+                    self.progressDialog.close()
+                except:
+                    pass
+                self.progressDialog = None
+            
+            # Clean up worker object
+            if hasattr(self, 'worker') and self.worker is not None:
+                try:
+                    # Mark for termination
+                    self.worker.abort = True
+                    # Clean up references
+                    self.worker.deleteLater()
+                except:
+                    pass
+                self.worker = None
+            
+            # Clean up thread
+            if hasattr(self, 'mythread') and self.mythread is not None:
+                try:
+                    # If thread is still running, try to stop it
+                    if self.mythread.isRunning():
+                        self.mythread.quit()
+                        # Wait briefly for thread to end
+                        self.mythread.wait(500)
+                    
+                    # Delete thread
+                    self.mythread.deleteLater()
+                except:
+                    pass
+                self.mythread = None
+        except Exception as e:
+            import traceback
+            QgsMessageLog.logMessage("Error in cleanupResources: " + traceback.format_exc(),
+                                  self.NNJOIN, Qgis.Warning)
+    
+    def closeEvent(self, event):
+        """Override close event to ensure safe cleanup"""
+        self.cleanupResources()
+        super(NNJoinDialog, self).closeEvent(event)
+    
+    def reject(self):
+        """Override reject method to ensure safe cleanup"""
+        self.cleanupResources()
+        super(NNJoinDialog, self).reject()
+    
+    def accept(self):
+        """Override accept method to ensure safe cleanup"""
+        self.cleanupResources()
+        super(NNJoinDialog, self).accept()
+    
+    def simplifiedShowError(self, text):
+        """Simplified error display using standard dialog instead of message bar"""
+        QgsMessageLog.logMessage('Error: ' + text, self.NNJOIN, Qgis.Critical)
+        # Use standard Qt message box
+        from qgis.PyQt.QtWidgets import QMessageBox
+        QMessageBox.critical(None, self.tr('Error'), text)
+    
+    def simplifiedShowWarning(self, text):
+        """Simplified warning display using only log"""
+        QgsMessageLog.logMessage('Warning: ' + text, self.NNJOIN, Qgis.Warning)
+    
+    def simplifiedShowInfo(self, text):
+        """Simplified info display using only log"""
+        QgsMessageLog.logMessage('Info: ' + text, self.NNJOIN, Qgis.Info)
 
     def fieldchanged(self, number=0):
         # If the layer list is being updated, don't do anything
@@ -619,16 +705,3 @@ class NNJoinDialog(QDialog, FORM_CLASS):
         :rtype: QString
         """
         return QCoreApplication.translate('NNJoinDialog', message)
-
-    # Implement the accept method to avoid exiting the dialog when
-    # starting the work
-    def accept(self):
-        """Accept override."""
-        pass
-
-    # Implement the reject method to have the possibility to avoid
-    # exiting the dialog when cancelling
-    def reject(self):
-        """Reject override."""
-        # exit the dialog
-        QDialog.reject(self)
