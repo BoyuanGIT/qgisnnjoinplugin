@@ -1,4 +1,4 @@
-qgisnnjoinplugin
+QGIS NNJoin Plugin
 ================
 
 A QGIS plugin that performs a nearest neighbour join on two
@@ -14,3 +14,8 @@ attributes of one of the features in the input layer plus the
 attributes of the nearest feature in the join layer.  In
 addition, a new attribute is added that contains the distance
 between the two neighbouring features.
+
+Unfortunately, Håvard Tveite, who made significant contributions 
+to the development of QGIS and was the author of the NNJoin plugin, 
+passed away in May 2021 due to brain cancer.
+https://www.qgis.no/2022/05/04/qgis-aerer-havard-tveite/
